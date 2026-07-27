@@ -9,12 +9,7 @@ AudioRecorder::~AudioRecorder() {
 }
 
 int AudioRecorder::FindDeviceIdByName(const std::string& nameSubstr) {
-    // ВАЖНО: не вызываем Pa_Initialize() здесь. Раньше это приводило к двойной
-    // инициализации PortAudio (Start() уже вызывает Pa_Initialize() перед тем,
-    // как позвать этот метод), а Stop() вызывает Pa_Terminate() только один
-    // раз - счётчик инициализаций PortAudio не обнулялся, оставляя "утечку"
-    // ссылки на инициализацию. Метод предполагает, что PortAudio уже
-    // инициализирован вызывающим кодом (см. Start()).
+  
     int numDevices = Pa_GetDeviceCount();
 
     for (int i = 0; i < numDevices; i++) {
