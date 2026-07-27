@@ -12,8 +12,6 @@ SileroVAD::SileroVAD(const std::string& model_path)
     session_options.SetIntraOpNumThreads(1);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-    // 64 сэмпла контекста + 512 нового кадра = 576 (см. официальный OnnxWrapper
-    // в python-пакете silero_vad: self._context (64) + x (512) -> input).
     input_node_dims = {1, static_cast<int64_t>(kContextSamples + kFrameSamples)};
     state_node_dims = {2, 1, 128};
     sr_node_dims = {1};
@@ -58,11 +56,9 @@ float SileroVAD::ProcessFrame(const std::vector<int16_t>& frame) {
 
         float speech_prob = output_tensors[0].GetTensorData<float>()[0];
 
-        // Обновляем скрытое состояние
         const float* state_data = output_tensors[1].GetTensorData<float>();
         std::copy(state_data, state_data + _state.size(), _state.begin());
 
-        // Сохраняем последние 64 сэмпла как контекст для следующего вызова
         std::copy(input_frame.end() - static_cast<long>(kContextSamples), input_frame.end(), _context.begin());
 
         return speech_prob;
