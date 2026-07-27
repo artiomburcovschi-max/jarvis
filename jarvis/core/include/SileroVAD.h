@@ -4,21 +4,12 @@
 #include <string>
 #include <vector>
 #include <onnxruntime_cxx_api.h>
-
-// Обёртка над Silero VAD (ONNX, v5).
-//
-// ВАЖНО: модель v5 ожидает на вход не 512 сэмплов, а 576 = 64 (контекст
-// от предыдущего кадра) + 512 (новый кадр). Без этого context'а модель
-// работает и не падает (входной тензор задан с динамической формой),
-// но выдаёт заниженную вероятность речи почти на любом сигнале.
 class SileroVAD {
 public:
     explicit SileroVAD(const std::string& model_path);
 
-    // Возвращает вероятность речи в кадре (0.0-1.0). frame.size() должен быть 512.
     float ProcessFrame(const std::vector<int16_t>& frame);
 
-    // Сбрасывает скрытое состояние RNN и контекст (например, при старте программы).
     void Reset();
 
 private:
