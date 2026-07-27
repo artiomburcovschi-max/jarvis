@@ -13,7 +13,6 @@ class ZMQListener(QThread):
     def run(self):
         context = zmq.Context()
         socket = context.socket(zmq.PAIR)
-        # ВАЖНО: connect, а не bind, и порт 5556!
         socket.connect("tcp://127.0.0.1:5556")
 
         while True:
@@ -21,8 +20,6 @@ class ZMQListener(QThread):
                 text = socket.recv_string()
                 self.message_received.emit(text)
             except zmq.ZMQError as e:
-                # Не даём потоку тихо умереть при разрыве соединения -
-                # сообщаем в UI и пробуем переподключиться.
                 self.connection_lost.emit(str(e))
                 time.sleep(1)
 
