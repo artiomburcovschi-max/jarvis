@@ -1,0 +1,8 @@
+# Пример для Python / C++ проекта
+venv/
+__pycache__/
+build/
+bin/
+.vscode/
+.idea/
+*.log

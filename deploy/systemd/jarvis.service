@@ -1,0 +1,47 @@
+# deploy/systemd/jarvis.service
+#
+# User-unit (не системный сервис!) — UI на Qt нужен доступ к графической
+# сессии, поэтому это ~/.config/systemd/user/, а не /etc/systemd/system/.
+#
+# Установка:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/systemd/jarvis.service ~/.config/systemd/user/
+#   # --- ВАЖНО: замените ДВА пути ниже на реальный путь к проекту ---
+#   nano ~/.config/systemd/user/jarvis.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now jarvis.service
+#
+# Логи:
+#   journalctl --user -u jarvis -f        # то, что скрипт печатает в stdout
+#   tail -f /путь/к/jarvis/logs/*.log      # подробные логи по каждому процессу
+#
+# Это ВТОРОЙ уровень защиты поверх собственного watchdog-цикла в
+# start.sh: если сам скрипт упадёт целиком (а не один из трёх дочерних
+# процессов, которые он и так перезапускает сам) — systemd поднимет его
+# заново. Такие ситуации не должны пересекаться: свой watchdog watchdog
+# работает, пока сам жив, а тут просто дополнительная страховка на случай
+# OOM-killer'а или подобного.
+
+[Unit]
+Description=Jarvis voice assistant (ядро + сервер + UI)
+After=graphical-session.target sound.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+
+# ЗАМЕНИТЕ на реальный абсолютный путь к проекту на вашей машине:
+ExecStart=/home/ЗАМЕНИТЕ_НА_СВОЙ_ПУТЬ/jarvis/scripts/start.sh
+ExecStop=/home/ЗАМЕНИТЕ_НА_СВОЙ_ПУТЬ/jarvis/scripts/stop.sh
+
+Restart=on-failure
+RestartSec=5
+
+# Нужно для Qt UI, если запускаете из-под systemd, а не из терминала внутри
+# уже открытой графической сессии. Если UI не поднимается с ошибкой
+# "cannot connect to display" — проверьте актуальный DISPLAY командой
+# `echo $DISPLAY` в своей сессии и поправьте значение ниже.
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=default.target
