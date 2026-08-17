@@ -31,6 +31,7 @@ int main() {
     std::signal(SIGINT, HandleSigint);
     std::signal(SIGTERM, HandleSigint);
 
+
     std::cout << "[Jarvis Core] Инициализация..." << std::endl;
 
     // 1. ZeroMQ: аудио уходит в Python отдельным потоком через PhraseSender,
@@ -156,7 +157,7 @@ int main() {
     bool was_muted = false;
 
     while (g_running) {
-        if (recorder.ReadFrame(frame)) {
+        if (recorder.ReadStream(frame)) {
             if (frame.empty()) continue;
 
             // 0. Раунд 10: пока Джарвис говорит (jarvis_speaking), микрофон

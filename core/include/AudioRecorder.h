@@ -1,25 +1,26 @@
-#ifndef AUDIO_RECORDER_H
-#define AUDIO_RECORDER_H
+#pragma once
 
+#include <string>
 #include <vector>
 #include <cstdint>
-#include <string>
 #include <portaudio.h>
 
-class AudioRecorder {
+
+class AudioRecorder{
 public:
-    AudioRecorder() = default;
     ~AudioRecorder();
 
-    bool Start(const std::string& deviceNameHint = "default");
+    //Функция старта включения микрофона и начала записи,принимает строку с названием микрофона.По дефолту стоит - "default"
+    bool Start(const std::string& DeviceName = "default");
+    //Функция остановки(деструктор,строка 11-13)
     void Stop();
-    bool ReadFrame(std::vector<int16_t>& frame);
-
-    static int FindDeviceIdByName(const std::string& nameSubstr);
-
+    //Функция чтения аудио-потока из функции Start()
+    bool ReadStream(std::vector<int16_t>& AudioStorage);
+    //Функция-помощник для Start(),перебирает все устройства подключенные к системе и находит нужное при условии что DeviceName != "default"
+    int SearchingTargetDeviceId(const std::string& DeviceName);
+    //Функция вывода всех доступных микрофонов
+    void PrintDevices();
 private:
     PaStream* stream = nullptr;
     bool isRunning = false;
 };
-
-#endif 
