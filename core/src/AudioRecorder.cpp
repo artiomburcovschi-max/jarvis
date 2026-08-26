@@ -24,7 +24,7 @@ int AudioRecorder::SearchingTargetDeviceId(const std::string& DeviceName) {
 void AudioRecorder::PrintDevices(){
     int numDevices = Pa_GetDeviceCount();
     for (int i = 0;i < numDevices;i++){
-        std::cout << "[AudioRecorder] Всt устройства: " 
+        std::cout << "[AudioRecorder] Все устройства: " 
                 << Pa_GetDeviceInfo(i)->name <<"(ID: " << i << ")" << std::endl;
     }
 }

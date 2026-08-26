@@ -8,3 +8,4 @@ sounddevice==0.5.5
 numpy>=1.26,<3
 requests==2.33.1
 PyYAML==6.0.2
+pyautogui

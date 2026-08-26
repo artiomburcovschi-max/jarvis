@@ -73,6 +73,7 @@ on_sentence_ready() на каждое законченное предложен�
 
 import json
 import re
+import subprocess
 from typing import Callable
 
 from .llm_client import LLMClientError, create_client, create_fallback_client
@@ -204,13 +205,14 @@ class DialogManager:
         # это поле сразу после handle_streaming() и решает, что делать со
         # следующей фразой (см. server.py: match_confirmation_reply).
         self.pending_confirmation: "dict | None" = None
+        self.is_sleeping: bool = False
 
     def reset(self):
         """Начать разговор с чистого листа (новая сессия после долгой паузы)."""
         self._history = []
         self._history_summary = ""
         self.pending_confirmation = None
-
+        self.is_sleeping = False
     def _append_history(self, entry: dict) -> None:
         """Единая точка добавления в self._history - централизует запись
         полного транскрипта на диск (раунд 28, E2, conversation_log.py)
@@ -442,7 +444,39 @@ class DialogManager:
         предложения из handle_streaming() в одну строку и возвращает её."""
         parts: list[str] = []
         return self.handle_streaming(user_text, on_sentence_ready=parts.append) or " ".join(parts)
+    def _mute_system_audio(self):
+        try:
+            # Для надежности шлем 0/false и проверяем pactl
+            subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "1"], check=False)
+            subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "true"], check=False)
+        except Exception:
+            pass
 
+    def _unmute_system_audio(self):
+        try:
+            subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "0"], check=False)
+            subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "false"], check=False)
+        except Exception:
+            pass
+
+    def _minimize_windows(self):
+        try:
+            subprocess.run(["wmctrl", "-k", "on"], check=False)
+        except Exception:
+            try:
+                subprocess.run(["xdotool", "key", "super+d"], check=False)
+            except Exception:
+                pass
+
+    def _restore_windows(self):
+        """Разворачивает окна обратно на экран."""
+        try:
+            subprocess.run(["wmctrl", "-k", "off"], check=False)
+        except Exception:
+            try:
+                subprocess.run(["xdotool", "key", "super+d"], check=False)
+            except Exception:
+                pass
     def handle_streaming(
         self,
         user_text: str,
@@ -450,44 +484,50 @@ class DialogManager:
         should_abort: Callable[[], bool] = lambda: False,
         on_tool_call: Callable[[str, dict, dict], None] = lambda name, args, result: None,
     ) -> str:
-        """Отправляет реплику пользователя в LLM, стримит ответ по кусочкам.
+        user_lower = user_text.lower().strip()
 
-        on_sentence_ready(sentence) зовётся на каждое законченное предложение
-        сразу, как оно готово - ДО того, как весь ответ модели завершится.
-        Это и даёт быструю озвучку: первая фраза начинает звучать, пока LLM
-        ещё генерирует продолжение (см. voice/streaming_speaker.py).
+        # Ключевые слова для Пробуждения / Возврата в нормальный режим:
+        wake_keywords = [
+            "джарвис проснись", "проснись", "джарвис слушай", "подъем",
+            "со звуком", "включи звук", "верни окна", "разверни", "верни все"
+        ]
 
-        on_tool_call(name, args, result) - раунд 18 (C4, audit-лог) - зовётся
-        на КАЖДЫЙ реальный вызов инструмента (name - имя, args - разобранные
-        аргументы, result - разобранный JSON-результат: {"result": ...} или
-        {"error": ...}). Зовётся и для перехваченных "опасных" вызовов тоже
-        (см. DANGEROUS_TOOLS) - result в этом случае будет
-        {"status": "requires_user_confirmation"}, чтобы в UI было видно, что
-        действие ЗАПРОШЕНО, а не молча выполнено. По умолчанию no-op - вызов
-        без колбэка (например, из тестов) ничего не ломает.
+        # 1. Если Джарвис СПИТ или просят вернуть всё обратно:
+        if self.is_sleeping or any(kw in user_lower for kw in wake_keywords):
+            if any(kw in user_lower for kw in wake_keywords):
+                self.is_sleeping = False
+                self._unmute_system_audio() # Включаем звук
+                self._restore_windows()     # Разворачиваем окна обратно
+                
+                wake_msg = "Я на связи, все вернул."
+                on_sentence_ready(wake_msg)
+                return wake_msg
+            
+            # Если спит и фраза не про пробуждение — просто молчим
+            return ""
 
-        should_abort() проверяется в трёх местах, а не только "после каждого
-        кусочка от LLM" - это важно для честной отмены:
-          1. В начале КАЖДОГО хопа, до сетевого запроса - если пользователя
-             уже перебило между хопами (например, во время выполнения
-             инструмента), не тратим ещё один запрос к LLM впустую.
-          2. Внутри чтения потока - как и раньше, после каждого чанка.
-          3. Перед выполнением КАЖДОГО инструмента - если прервали ровно в
-             момент "модель попросила вызвать функцию, но мы её ещё не
-             выполнили", не дёргаем реальное действие (открыть браузер,
-             громкость и т.п.) ради ответа, который уже никто не услышит.
+        # 2. Если Джарвис НЕ спит, но просят уйди в сон / включить стелс:
+        sleep_keywords = ["усни", "отдохни", "спящий режим", "замолчи", "тишина"]
+        stealth_keywords = ["без звука", "стелс", "сверни все", "выключи звук"]
 
-        Не бросает исключений наружу - при любой ошибке или отмене зовёт
-        (для ошибок) on_sentence_ready() с вежливым текстом, и откатывает
-        историю ПОЛНОСТЬЮ до состояния "как будто этой реплики не было" -
-        через снимок длины истории (_history_len_before), а не через
-        pop() одного элемента. Это принципиально при отмене на позднем
-        хопе: к этому моменту в истории уже могут лежать этот user-ход,
-        assistant-ход с tool_calls и несколько tool-ответов - одиночный
-        pop() убрал бы не то, что нужно, и мог бы оставить "подвешенный"
-        tool_call без ответа в постоянной истории, что сломало бы протокол
-        (и любой следующий запрос к LLM) на ровном месте.
-        """
+        is_sleep = any(kw in user_lower for kw in sleep_keywords)
+        is_stealth = any(kw in user_lower for kw in stealth_keywords)
+
+        if is_sleep or is_stealth:
+            self.is_sleeping = True
+            
+            # Если "без звука" или "стелс" — сворачиваем окна
+            if is_stealth:
+                self._minimize_windows()
+            
+            # Выключаем системный звук
+            self._mute_system_audio()
+            
+            sleep_msg = "Ушел в режим тишины."
+            on_sentence_ready(sleep_msg)
+            return sleep_msg
+        # =========================================================================
+
         history_len_before = len(self._history)
         # C3: сбрасываем с чистого листа - pending_confirmation отражает
         # РЕЗУЛЬТАТ именно ЭТОГО вызова (server.py читает его сразу после

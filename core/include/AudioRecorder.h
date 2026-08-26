@@ -11,7 +11,7 @@ public:
     ~AudioRecorder();
 
     //Функция старта включения микрофона и начала записи,принимает строку с названием микрофона.По дефолту стоит - "default"
-    bool Start(const std::string& DeviceName = "default");
+    bool Start(const std::string& DeviceName = "pulse");
     //Функция остановки(деструктор,строка 11-13)
     void Stop();
     //Функция чтения аудио-потока из функции Start()
